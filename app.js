@@ -7,6 +7,7 @@ const firebaseConfig = {
 
 let myChart = null;
 let activityChart = null;
+let completedSet = new Set();
 
 if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
@@ -179,27 +180,57 @@ async function fetchLeetCodeData(username) {
     const originalText = btn.innerText;
     btn.innerText = "Syncing...";
 
+    let data;
+
     try {
-        const res = await fetch(`https://leetcode-stats-api.vercel.app/${username}`);
-        if (!res.ok) throw new Error("User not found");
-        const data = await res.json();
+        // 🔹 FETCH
+        try {
+            const res = await fetch(`https://leetcode-stats-api.vercel.app/${username}`);
+            data = await res.json();
 
+            console.log("API data:", data);
+
+            if (!data || typeof data.totalSolved !== "number") {
+                alert("User not found!");
+                return;
+            }
+
+        } catch (e) {
+            console.error("Fetch failed:", e);
+            alert("Failed to fetch data");
+            return;
+        }
+
+        // 🔹 UI UPDATE
         updateStatsUI(data.easySolved, data.mediumSolved, data.hardSolved);
-        if (data.submissionCalendar) updateActivityGraph(data.submissionCalendar);
 
+        // 🔹 CHART 
+        try {
+            if (data.submissionCalendar) {
+                updateActivityGraph(data.submissionCalendar);
+            }
+        } catch (e) {
+            console.warn("Chart failed:", e);
+        }
+
+        // 🔹 UI toggle
         usernameSection.classList.add('hidden');
         welcomeSection.classList.remove('hidden');
         displayUser.innerText = username;
 
+        // 🔹 DB save
         if (auth.currentUser) {
-            db.collection('users').doc(auth.currentUser.uid).set({
-                leetcode_username: username,
-                stats: data,
-                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
-            }, { merge: true });
+            try {
+                await db.collection('users').doc(auth.currentUser.uid).set({
+                    leetcode_username: username,
+                    stats: data,
+                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+            } catch (e) {
+                console.warn("DB save failed:", e);
+            }
         }
-    } catch (e) {
-        if (document.activeElement === btn) alert("LeetCode user not found!");
+
     } finally {
         btn.innerText = originalText;
     }
@@ -231,21 +262,64 @@ function updateStatsUI(easy, medium, hard) {
 // --------------------------------------------------------------
 function loadUserProgress(uid) {
     db.collection('users').doc(uid).collection('progress').get().then(snapshot => {
+        completedSet.clear(); // reset
+
         snapshot.forEach(doc => {
-            const checkbox = document.querySelector(`.q-check[data-id="${doc.id}"]`);
+            const id = doc.id;
+
+            if (doc.data().done) {
+                completedSet.add(id);
+            }
+
+            const checkbox = document.querySelector(`.q-check[data-id="${id}"]`);
             if (checkbox) checkbox.checked = doc.data().done;
         });
+
+        updateProgressUI();
+        updateCompanyProgress();
     });
 }
 
 document.getElementById('questionsTable').addEventListener('change', (e) => {
-    if (e.target.classList.contains('q-check') && auth.currentUser) {
-        db.collection('users').doc(auth.currentUser.uid).collection('progress').doc(e.target.getAttribute('data-id')).set({
-            done: e.target.checked
-        });
+    if (e.target.classList.contains('q-check')) {
+
+        const row = e.target.closest('tr');
+        row.classList.toggle('completed', e.target.checked);
+        const id = e.target.getAttribute('data-id');
+
+        if (e.target.checked) {
+            completedSet.add(id);
+        } else {
+            completedSet.delete(id);
+        }
+
+
+        updateProgressUI();
+        updateCompanyProgress();
+
+        if (auth.currentUser) {
+            db.collection('users')
+              .doc(auth.currentUser.uid)
+              .collection('progress')
+              .doc(e.target.getAttribute('data-id'))
+              .set({
+                  done: e.target.checked
+              });
+        }
     }
 });
+function updateProgressUI() {
+    if (!practiceData) return;
 
+    const total = practiceData.length;
+    const completed = completedSet.size; // GLOBAL
+
+    document.getElementById('progressText').innerText =
+        `Overall: ${completed} / ${total}`;
+
+    const percent = total === 0 ? 0 : (completed / total) * 100;
+    document.getElementById('progressBar').style.width = percent + "%";
+}
 function renderTable(filter = "All") {
     const tableContainer = document.getElementById('questionsTable');
     tableContainer.innerHTML = ""; 
@@ -266,6 +340,70 @@ function renderTable(filter = "All") {
         }
     });
     if (auth.currentUser) loadUserProgress(auth.currentUser.uid);
+    updateProgressUI();
+    updateCompanyProgress();
+}
+function updateCompanyProgress() {
+    const container = document.getElementById('companyProgress');
+    container.innerHTML = "";
+
+    if (!practiceData) return;
+
+    const companyMap = {};
+
+    // 🔹 Step 1: build totals from FULL dataset
+    practiceData.forEach(q => {
+        const company = q.company;
+
+        if (!companyMap[company]) {
+            companyMap[company] = { total: 0, done: 0 };
+        }
+
+        companyMap[company].total++;
+    });
+
+    // 🔹 Step 2: count completed using checkboxes
+    document.querySelectorAll('.q-check').forEach(cb => {
+        if (cb.checked) {
+            const row = cb.closest('tr');
+            const company = row.children[3].innerText;
+
+            if (companyMap[company]) {
+                companyMap[company].done++;
+            }
+        }
+    });
+
+    // 🔹 Step 3: render UI
+    let filteredMap = companyMap;
+
+if (filterDropdown.value !== "All") {
+    filteredMap = {
+        [filterDropdown.value]: companyMap[filterDropdown.value]
+    };
+}
+    Object.entries(filteredMap).forEach(([company, { total, done }]) => {
+        const percent = total === 0 ? 0 : (done / total) * 100;
+
+        container.innerHTML += `
+            <div style="margin:10px 0;">
+                <div style="display:flex; justify-content:space-between;">
+                    <strong>${company}</strong>
+                    <span>${done}/${total}</span>
+                </div>
+
+                <div style="background:#333; height:6px; border-radius:6px;">
+                    <div style="
+                        width:${percent}%;
+                        height:6px;
+                        background:${percent > 70 ? '#2ECC40' : percent > 40 ? '#FF851B' : '#FF4136'};
+                        border-radius:6px;
+                        transition:width 0.3s;
+                    "></div>
+                </div>
+            </div>
+        `;
+    });
 }
 
 // --------------------------------------------------------------
@@ -300,3 +438,5 @@ function resetUI() {
 
 filterDropdown.addEventListener('change', (e) => renderTable(e.target.value));
 renderTable();
+updateProgressUI();
+updateCompanyProgress();
