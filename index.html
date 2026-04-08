@@ -6,6 +6,10 @@
     <title>GRIET Placement Prep</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/picnic">
     <style>
+        .completed {
+        opacity: 0.6;
+        text-decoration: line-through;
+        }
         body { padding: 20px; background-color: #f4f4f4; transition: all 0.3s ease; }
         .hidden { display: none !important; }
         .card { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -130,6 +134,17 @@
 
                 </select>
             </div>
+
+            <div id="progressContainer" style="margin-bottom: 15px;">
+  <p id="progressText">0 / 0 completed</p>
+
+  <div style="background:#444; border-radius:10px; overflow:hidden;">
+    <div id="progressBar"
+         style="height:10px; width:0%; background:#2ECC40; transition: width 0.3s;">
+    </div>
+  </div>
+</div>
+<div id="companyProgress" style="margin-bottom:15px;"></div>
             <table class="primary">
                 <thead>
                     <tr>
@@ -145,12 +160,12 @@
         </div>
     </div>
 
-    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore-compat.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     
     <script src="blind75.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
